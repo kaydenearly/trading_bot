@@ -29,62 +29,103 @@ def fetch_dataset(symbol: str, cfg: dict) -> pd.DataFrame:
 
 
 def simulate(test_df: pd.DataFrame, proba_up: pd.Series, cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Hysteresis long/flat strategy with fees + slippage, bar-by-bar.
+    """Long/flat strategy with ATR-based risk management, fees + slippage,
+    bar-by-bar, using OHLC so stop/target fills are checked intrabar.
 
-    Returns (result_df, trades_df). trades_df has one row per completed
-    round-trip (entry -> exit) with return_pct and holding_bars, used for
-    win rate / profit factor / expectancy / consecutive-loss stats.
+    Position sizing is risk-based: a trade that hits its stop should cost
+    about risk_per_trade_pct of equity, regardless of the symbol's
+    volatility (sized inversely to ATR), capped at 100% of equity (no
+    leverage). The stop only ratchets favorably and only repositions once
+    it would improve by more than the noise threshold -- a trailing stop
+    tied to a moving reference that's allowed to loosen can fail to ever
+    trigger, which is exactly the kind of bug this guards against.
+
+    Exit priority each bar: hard stop (loss protection, always honored) ->
+    take-profit target -> model-signal flip, but the signal only closes a
+    position that's currently profitable (it doesn't override the stop).
+
+    Returns (result_df, trades_df). trades_df's return_pct is the P&L on
+    capital actually committed to that trade (not blended with idle cash),
+    so win rate / profit factor stay meaningful regardless of position size.
     """
     buy_th = cfg["buy_threshold"]
     sell_th = cfg["sell_threshold"]
     fee_rate = cfg["fee_rate"]
     slippage = cfg["slippage_bps"] / 10_000
+    risk_cfg = cfg["risk"]
+    risk_per_trade = risk_cfg["risk_per_trade_pct"]
+    stop_atr_mult = risk_cfg["stop_atr_mult"]
+    target_atr_mult = risk_cfg["target_atr_mult"]
+    trail_threshold_mult = risk_cfg["stop_trail_threshold_atr_mult"]
 
-    position = 0.0  # 0 = flat, 1 = fully long
-    cash = 1.0      # normalized starting equity = 1.0
+    position = 0.0  # 0 = flat, 1 = long
+    cash = 1.0       # normalized starting equity = 1.0
     units = 0.0
+    entry_price = stop_price = target_price = stop_distance = None
+    capital_committed = None
+    entry_idx = None
     equity_curve = []
     positions = []
     trades = []
-    entry_idx = None
-    entry_equity = None
-    entry_price = None
 
     closes = test_df["close"].values
+    highs = test_df["high"].values
+    lows = test_df["low"].values
+    atrs = test_df["atr"].values
     timestamps = test_df["timestamp"].values
+
+    def record_trade(exit_idx, fill_price):
+        nonlocal entry_idx, entry_price, capital_committed
+        proceeds = units * fill_price
+        fee = proceeds * fee_rate
+        capital_returned = proceeds - fee
+        trades.append({
+            "entry_time": timestamps[entry_idx], "exit_time": timestamps[exit_idx],
+            "entry_price": entry_price, "exit_price": fill_price,
+            "return_pct": capital_returned / capital_committed - 1.0,
+            "holding_bars": exit_idx - entry_idx,
+        })
+        return capital_returned
+
     for i, p_up in enumerate(proba_up.values):
-        price = closes[i]
-        if p_up >= buy_th:
-            desired = 1.0
-        elif p_up <= sell_th:
-            desired = 0.0
-        else:
-            desired = position
+        close, high, low, atr = closes[i], highs[i], lows[i], atrs[i]
 
-        if desired != position:
-            fill_price = price * (1 + slippage) if desired > position else price * (1 - slippage)
-            if desired == 1.0:
-                units = cash / fill_price
-                fee = units * fill_price * fee_rate
-                cash = -fee
-                entry_idx, entry_equity, entry_price = i, cash + units * fill_price, fill_price
+        if position == 1.0:
+            if low <= stop_price:
+                fill_price = stop_price * (1 - slippage)
+                cash += record_trade(i, fill_price)
+                units, position = 0.0, 0.0
+            elif high >= target_price:
+                fill_price = target_price * (1 - slippage)
+                cash += record_trade(i, fill_price)
+                units, position = 0.0, 0.0
+            elif p_up <= sell_th and close > entry_price:
+                fill_price = close * (1 - slippage)
+                cash += record_trade(i, fill_price)
+                units, position = 0.0, 0.0
             else:
-                proceeds = units * fill_price
-                fee = proceeds * fee_rate
-                cash = proceeds - fee
-                units = 0.0
-                exit_equity = cash
-                if entry_idx is not None:
-                    trades.append({
-                        "entry_time": timestamps[entry_idx], "exit_time": timestamps[i],
-                        "entry_price": entry_price, "exit_price": fill_price,
-                        "return_pct": exit_equity / entry_equity - 1.0,
-                        "holding_bars": i - entry_idx,
-                    })
-                entry_idx = entry_equity = entry_price = None
-            position = desired
+                candidate_stop = close - stop_distance
+                if candidate_stop > stop_price + trail_threshold_mult * atr:
+                    stop_price = candidate_stop
+        elif p_up >= buy_th and atr > 0:
+            equity_before = cash
+            fill_price = close * (1 + slippage)
+            stop_distance = stop_atr_mult * atr
+            risk_amount = equity_before * risk_per_trade
+            raw_units = risk_amount / stop_distance
+            max_affordable_units = equity_before / fill_price
+            units = min(raw_units, max_affordable_units)
+            cost = units * fill_price
+            fee = cost * fee_rate
+            cash -= cost + fee
+            capital_committed = cost + fee
+            entry_price = fill_price
+            stop_price = entry_price - stop_distance
+            target_price = entry_price + target_atr_mult * atr
+            entry_idx = i
+            position = 1.0
 
-        equity_curve.append(cash + units * price)
+        equity_curve.append(cash + units * close)
         positions.append(position)
 
     out = test_df[["timestamp", "close"]].copy()

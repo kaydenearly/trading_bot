@@ -20,6 +20,14 @@ class PaperState:
     last_candle_ts: str | None = None
     trade_log: list | None = None
     equity_log: list | None = None
+    # ATR-based risk management state (paper_trade.py / evaluate_bar) -- None
+    # when flat. Mirrors strategy.simulate()'s per-bar state so live paper
+    # trading uses the same entry/exit/sizing logic as the backtest.
+    entry_price: float | None = None
+    stop_price: float | None = None
+    target_price: float | None = None
+    stop_distance: float | None = None
+    capital_committed: float | None = None
 
     def __post_init__(self):
         if self.trade_log is None:
@@ -142,3 +150,83 @@ def execute_target_position(
     })
     record_equity(state, price, candle_ts)
     return state
+
+
+def evaluate_bar(
+    state: PaperState,
+    close: float, high: float, low: float, atr: float,
+    p_up: float, candle_ts: str, cfg: dict,
+) -> tuple[PaperState, str | None]:
+    """ATR-risk-managed entry/exit for one new candle -- the live-trading
+    counterpart to strategy.simulate()'s per-bar body, so paper trading uses
+    the same sizing and stop/target/signal-exit rules as the backtest and
+    walk-forward validation. Call once per symbol per new candle.
+
+    Returns (state, trade_outcome) where trade_outcome is "win"/"loss" if a
+    position was just closed this call, else None -- feed that into
+    risk.record_trade_outcome for the portfolio-wide consecutive-loss
+    tracker.
+    """
+    fee_rate = cfg["fee_rate"]
+    slippage = cfg["slippage_bps"] / 10_000
+    risk_cfg = cfg["risk"]
+    buy_th, sell_th = cfg["buy_threshold"], cfg["sell_threshold"]
+    outcome = None
+
+    if state.position > 0:
+        fill_price = None
+        if low <= state.stop_price:
+            fill_price = state.stop_price * (1 - slippage)
+        elif high >= state.target_price:
+            fill_price = state.target_price * (1 - slippage)
+        elif p_up <= sell_th and close > state.entry_price:
+            fill_price = close * (1 - slippage)
+
+        if fill_price is not None:
+            proceeds = state.position * fill_price
+            fee = proceeds * fee_rate
+            capital_returned = proceeds - fee
+            return_pct = capital_returned / state.capital_committed - 1.0
+            outcome = "win" if return_pct > 0 else "loss"
+            state.cash += capital_returned
+            state.trade_log.append({
+                "time": datetime.now(timezone.utc).isoformat(), "candle_ts": candle_ts,
+                "side": "sell", "units": -state.position, "fill_price": fill_price, "fee": fee,
+                "return_pct": return_pct, "cash_after": state.cash, "position_after": 0.0,
+            })
+            state.position = 0.0
+            state.entry_price = state.stop_price = state.target_price = None
+            state.stop_distance = state.capital_committed = None
+        else:
+            candidate_stop = close - state.stop_distance
+            if candidate_stop > state.stop_price + risk_cfg["stop_trail_threshold_atr_mult"] * atr:
+                state.stop_price = candidate_stop
+
+    elif p_up >= buy_th and atr > 0:
+        equity_before = state.cash
+        fill_price = close * (1 + slippage)
+        stop_distance = risk_cfg["stop_atr_mult"] * atr
+        risk_amount = equity_before * risk_cfg["risk_per_trade_pct"]
+        raw_units = risk_amount / stop_distance
+        max_affordable_units = equity_before / fill_price
+        units = min(raw_units, max_affordable_units)
+        if units > 0:
+            cost = units * fill_price
+            fee = cost * fee_rate
+            state.cash -= cost + fee
+            state.position = units
+            state.entry_price = fill_price
+            state.stop_distance = stop_distance
+            state.stop_price = fill_price - stop_distance
+            state.target_price = fill_price + risk_cfg["target_atr_mult"] * atr
+            state.capital_committed = cost + fee
+            state.trade_log.append({
+                "time": datetime.now(timezone.utc).isoformat(), "candle_ts": candle_ts,
+                "side": "buy", "units": units, "fill_price": fill_price, "fee": fee,
+                "cash_after": state.cash, "position_after": state.position,
+            })
+
+    state.last_price = close
+    state.last_candle_ts = candle_ts
+    record_equity(state, close, candle_ts)
+    return state, outcome

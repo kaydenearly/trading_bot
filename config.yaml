@@ -47,6 +47,29 @@ walk_forward:
 buy_threshold: 0.55       # go long when P(up) exceeds this
 sell_threshold: 0.45      # go flat when P(up) drops below this
 
+# Risk management. Position sizing is risk-based (inversely proportional to
+# volatility via ATR) rather than "100% in or flat" -- a losing trade that
+# hits its stop should cost about risk_per_trade_pct of equity, no matter
+# how volatile the symbol is. Stops/targets are ATR-multiples from entry;
+# the stop only ever ratchets favorably (never loosens) and only
+# repositions once it would improve by more than the noise threshold.
+risk:
+  risk_per_trade_pct: 0.01        # risk this fraction of a symbol's sleeve equity per trade
+  stop_atr_mult: 2.0               # stop-loss distance from entry, in ATRs
+  target_atr_mult: 4.0             # take-profit distance from entry, in ATRs (2:1 reward:risk)
+  stop_trail_threshold_atr_mult: 0.5   # only move the trailing stop when it improves by at least this many ATRs
+
+  # Portfolio-wide controls (enforced in paper_trade.py / paper_broker.py,
+  # across all symbols -- these don't apply inside a single symbol's
+  # backtest/walk-forward run, which is deliberately isolated per symbol).
+  max_concurrent_positions: 3      # at most this many symbols open a position at once
+  max_portfolio_exposure_pct: 0.6  # at most this fraction of total equity deployed at once
+  max_daily_loss_pct: 0.05         # halt new entries if equity drops this much from today's starting level
+  max_weekly_loss_pct: 0.10        # same, over a rolling 7 days
+  max_drawdown_pct: 0.20           # emergency shutdown: halt ALL new entries if equity drawdown from its peak exceeds this
+  max_consecutive_losses: 4        # pause new entries (portfolio-wide) after this many losing trades in a row
+  cooldown_cycles: 5               # after a consecutive-loss pause, skip this many cycles before resuming
+
 # Simulated trading costs (applied in both backtest and paper trading)
 fee_rate: 0.001           # 0.1% per trade, typical spot taker fee
 slippage_bps: 5           # 5 basis points of adverse slippage per fill
@@ -55,6 +78,7 @@ slippage_bps: 5           # 5 basis points of adverse slippage per fill
 starting_cash: 10000      # total across all active symbols, split equally
 poll_seconds: 60          # how often to check for a new candle in paper_trade.py
 state_file: paper_state.json
+risk_state_file: risk_state.json   # portfolio-wide risk tracker (peak equity, day/week loss, kill switch)
 
 # TradingView webhook receiver (webhook_server.py)
 # TradingView alerts POST a JSON payload here when they fire. This only ever

@@ -98,7 +98,14 @@ gh workflow run retrain.yml
   equal-weighted portfolio curve across all selected symbols.
 - **`paper_broker.py`** — the "exchange" for paper trading: a JSON file with
   one sleeve per symbol, filled at the public price plus the same
-  fee/slippage model as the backtest.
+  fee/slippage model as the backtest. `evaluate_bar()` runs the same
+  ATR stop/target/sizing logic as `strategy.simulate()`, so live paper
+  trading and the backtest don't diverge.
+- **`risk.py`** — portfolio-wide controls that gate *new* entries only (an
+  open position's stop/target always runs regardless): max concurrent
+  positions, max total exposure, max daily/weekly loss, a max-drawdown
+  kill switch, and a cooldown after consecutive losses. State persists in
+  `risk_state.json`.
 - **`walk_forward.py`** — rolling-origin walk-forward validation: many
   independent train/test folds across a symbol's full history (expanding
   training window, non-overlapping test windows), instead of the one split
@@ -119,40 +126,71 @@ buy-and-hold on every symbol tested. This is a very different picture than
 the single 30-day backtest suggested (which showed some symbols with
 Sharpe ratios above 9) — that number was almost certainly noise from a tiny,
 cherry-picked test window, exactly the kind of result walk-forward
-validation exists to catch. The strategy as it currently stands (a
-gradient-boosted classifier on technical-indicator features, long/flat,
-no risk management) should be treated as **not validated** until this
-changes.
+validation exists to catch.
+
+## Risk management
+
+Added on top of the (still unvalidated) ML signal:
+
+- **Position sizing is risk-based**, not "100% in or flat": each trade sizes
+  so that hitting its stop costs about `risk_per_trade_pct` of the sleeve's
+  equity, inversely proportional to the symbol's volatility (ATR) — capped
+  at 100% of equity (no leverage). A volatile symbol gets a smaller position
+  than a calm one for the same dollar risk.
+- **ATR stop-loss and take-profit**, checked intrabar (against each candle's
+  high/low, not just its close). The stop only ever ratchets favorably and
+  only repositions once it would improve by more than a noise threshold — a
+  trailing stop that's allowed to loosen can fail to ever trigger.
+- **A model-signal exit only closes a position that's currently
+  profitable** — it doesn't override the hard stop, which is the actual
+  loss-limiting mechanism.
+- **Portfolio-wide controls** (`risk.py`, state in `risk_state.json`): max
+  concurrent positions, max total exposure, max daily/weekly loss, a
+  max-drawdown kill switch, and a cooldown after consecutive losses. These
+  only ever block a *new* entry — an open position's exit always runs.
+
+**This bounds the damage, it does not fix the signal.** Re-running
+walk-forward with risk management on shows max drawdown per fold is now
+reliably capped (worst fold: -11% vs. previously unbounded), but the
+negative mean Sharpe is essentially unchanged — risk management controls
+*how much* a bad signal can lose, it doesn't make a bad signal profitable.
+Improving or replacing the signal itself is separate, still-open work.
 
 ## Tuning
 
 Everything lives in `config.yaml`: universe screening (`scan_pool_size`,
 `select_top_n`), timeframe, label horizon/threshold, buy/sell probability
-thresholds, fee/slippage assumptions, total starting cash, poll interval.
+thresholds, risk management (`risk_per_trade_pct`, ATR stop/target
+multiples, portfolio-wide caps), fee/slippage assumptions, total starting
+cash, poll interval.
 
 ## Honest caveats
 
-- This is a simple baseline (one model per symbol, long/flat only, hourly
-  bars, equal-weight allocation, **no stop-loss or take-profit of any
-  kind**). Walk-forward validation (see above) shows it does not currently
-  have a real edge — treat this as a scaffold to iterate on, not a working
-  strategy.
+- This is still a simple baseline (one model per symbol, long/flat only,
+  hourly bars, equal-weight allocation across symbols). Walk-forward
+  validation (see above) shows the underlying ML signal does not currently
+  have a real edge — risk management (see above) now bounds how much that
+  costs, but doesn't fix it. Treat this as a scaffold to iterate on, not a
+  working strategy.
 - `backtest.py`/`universe.py` still use a single train/test split, which is
   known to be unreliable (see above) — `walk_forward.py` exists precisely
   because that single split can make a symbol look good by chance. Universe
   *selection* hasn't been switched over to walk-forward metrics yet; that's
   next, along with a correlation check so "more symbols" means real
   diversification rather than five correlated bets on the same move.
+- `webhook_server.py` (the parked TradingView-webhook path) still uses the
+  older `execute_target_position` (simple 0%/100% rebalance, no ATR
+  stop/target) rather than `evaluate_bar()` — it's a separate, currently
+  unused code path, not wired into the risk-managed live loop.
 - We switched from Kraken to Bitstamp because Kraken's public OHLC endpoint
   silently caps at ~720 candles (~30 days at 1h) no matter what
   `history_limit` requests — it ignores `since` pagination entirely past
   that point. Bitstamp honors real pagination (BTC/USD hourly data is
   available back to 2012) with comparable USD-pair breadth. Binance is not
   an option at all here since it blocks API requests from the US.
-- No risk management exists yet: no stop-loss, no take-profit, no
-  volatility-adjusted position sizing, no max-drawdown kill switch, no
-  per-trade or per-symbol risk cap. Position sizing is "all-in or flat, an
-  equal dollar share per symbol." This is the next priority.
+- No correlation awareness in portfolio construction yet — "top N by
+  backtest Sharpe" could pick several correlated bets on the same
+  underlying move rather than real diversification. Next priority.
 - Going from paper trading to **real money** is a separate, deliberate step
   that requires you to generate your own exchange API keys and wire up
   order placement yourself — do that only after you've validated the

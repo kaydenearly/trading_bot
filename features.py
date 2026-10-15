@@ -18,7 +18,14 @@ FEATURE_COLUMNS = [
     "sma_ratio_8_24", "sma_ratio_24_96",
     "volume_z_24",
     "hl_range",
+    "atr_pct",
 ]
+
+# Carried through make_dataset() alongside the model features, for use by the
+# risk/execution layer (stop and target sizing) -- not fed to the model
+# itself, since raw ATR/high/low are on the symbol's price scale and
+# wouldn't be comparable across symbols the way atr_pct is.
+EXTRA_COLUMNS = ["open", "high", "low", "atr"]
 
 
 def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
@@ -38,6 +45,19 @@ def _macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
     macd = ema_fast - ema_slow
     macd_signal = macd.ewm(span=signal, adjust=False).mean()
     return macd, macd_signal, macd - macd_signal
+
+
+def _atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    """Wilder's Average True Range. True range uses the prior close, so this
+    is naturally causal (uses only information available up to and including
+    the current bar)."""
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -75,6 +95,9 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     out["hl_range"] = (out["high"] - out["low"]) / close
 
+    out["atr"] = _atr(out["high"], out["low"], close, period=14)
+    out["atr_pct"] = out["atr"] / close
+
     return out
 
 
@@ -93,5 +116,5 @@ def make_dataset(df: pd.DataFrame, horizon: int, threshold: float) -> pd.DataFra
     """Build features + label and drop rows with any NaN (warm-up / tail)."""
     feat = build_features(df)
     feat["label"] = build_labels(df, horizon, threshold)
-    cols = ["timestamp"] + FEATURE_COLUMNS + ["label", "close"]
+    cols = ["timestamp"] + FEATURE_COLUMNS + EXTRA_COLUMNS + ["label", "close"]
     return feat[cols].dropna().reset_index(drop=True)
