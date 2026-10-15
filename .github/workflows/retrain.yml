@@ -29,11 +29,14 @@ jobs:
       - name: Backtest + retrain models for the selected symbols
         run: python backtest.py
 
-      - name: Commit updated universe, models, and backtest results
+      - name: Walk-forward validate the selected symbols (for the dashboard's Validation panel)
+        run: python walk_forward.py --all
+
+      - name: Commit updated universe, models, backtest, and validation results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add symbols.json universe_scan.csv models/ backtest_result.png backtest_result.csv backtest_*.csv
+          git add symbols.json universe_scan.csv models/ backtest_result.png backtest_result.csv backtest_*.csv walk_forward_summary.csv
           if git diff --cached --quiet; then
             echo "Nothing changed, skipping commit."
             exit 0

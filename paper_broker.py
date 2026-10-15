@@ -186,13 +186,15 @@ def evaluate_bar(
             proceeds = state.position * fill_price
             fee = proceeds * fee_rate
             capital_returned = proceeds - fee
+            pnl_dollars = capital_returned - state.capital_committed
             return_pct = capital_returned / state.capital_committed - 1.0
             outcome = "win" if return_pct > 0 else "loss"
             state.cash += capital_returned
             state.trade_log.append({
                 "time": datetime.now(timezone.utc).isoformat(), "candle_ts": candle_ts,
                 "side": "sell", "units": -state.position, "fill_price": fill_price, "fee": fee,
-                "return_pct": return_pct, "cash_after": state.cash, "position_after": 0.0,
+                "return_pct": return_pct, "pnl_dollars": pnl_dollars,
+                "cash_after": state.cash, "position_after": 0.0,
             })
             state.position = 0.0
             state.entry_price = state.stop_price = state.target_price = None

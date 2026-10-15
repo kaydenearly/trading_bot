@@ -2,9 +2,17 @@
 
 ### 📊 [Live dashboard — Sleeve Desk](https://claude.ai/code/artifact/45335d48-eb5d-498f-bb00-e57fbe667d37)
 
-Candlestick charts with trade markers, portfolio equity vs. buy-and-hold, and
-a live trade feed. Updates itself automatically every hour — works from any
-browser, including on your phone. No login or setup needed to view it.
+Candlestick charts with trade markers, portfolio equity vs. buy-and-hold, a
+trade feed, realized/unrealized P/L, a risk-controls status banner, and a
+walk-forward validation table. Works from any browser, including your phone,
+no login needed.
+
+**Updates hourly, not continuously** — and that's not a shortcut, it's
+actually how often anything changes: the bot only evaluates its signal once
+per candle close (`timeframe: 1h`), and the dashboard's data can only be
+written by the hourly GitHub Actions run or the hourly cloud sync routine
+(platform-enforced 1-hour minimum). A faster refresh would show the same
+numbers flickering between real updates, not new information.
 
 A self-contained pipeline: screen many crypto pairs for liquidity and
 backtested performance → pick the best ones → train a gradient-boosting

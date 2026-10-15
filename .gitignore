@@ -4,4 +4,5 @@ __pycache__/
 tv_paper_state.json
 webhook_server.log
 walk_forward_*.png
-walk_forward_*.csv
+walk_forward_*_folds.csv
+walk_forward_*_trades.csv

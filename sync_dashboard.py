@@ -16,6 +16,7 @@ import json
 import os
 from datetime import datetime, timezone
 
+import risk
 from data_feed import fetch_latest_candles
 from paper_broker import equity, load_portfolio
 from strategy import symbol_slug
@@ -44,6 +45,8 @@ def main():
 
     total_equity = 0.0
     total_trades = 0
+    total_realized_pnl = 0.0
+    total_unrealized_pnl = 0.0
     symbol_summaries = []
 
     for symbol, state in portfolio.items():
@@ -52,6 +55,14 @@ def main():
         sym_equity = equity(state, state.last_price)
         total_equity += sym_equity
         total_trades += len(state.trade_log)
+
+        realized_pnl = sum(t.get("pnl_dollars", 0.0) for t in state.trade_log if t["side"] == "sell")
+        unrealized_pnl = (
+            state.position * state.last_price - state.capital_committed
+            if state.position > 0 and state.capital_committed else 0.0
+        )
+        total_realized_pnl += realized_pnl
+        total_unrealized_pnl += unrealized_pnl
 
         candles = []
         if is_active:
@@ -77,6 +88,11 @@ def main():
             "last_price": state.last_price,
             "equity": sym_equity,
             "n_trades": len(state.trade_log),
+            "realized_pnl": realized_pnl,
+            "unrealized_pnl": unrealized_pnl,
+            "entry_price": state.entry_price,
+            "stop_price": state.stop_price,
+            "target_price": state.target_price,
             "candles": candles,
             "trades": state.trade_log[-TRADE_LOG_LIMIT:],
         }
@@ -87,7 +103,28 @@ def main():
             "symbol": symbol, "slug": slug, "status": doc["status"],
             "equity": sym_equity, "n_trades": len(state.trade_log),
             "last_price": state.last_price,
+            "realized_pnl": realized_pnl, "unrealized_pnl": unrealized_pnl,
         })
+
+    risk_state = risk.load_risk_state(cfg["risk_state_file"])
+    risk_summary = {
+        "shutdown": risk_state.shutdown,
+        "shutdown_reason": risk_state.shutdown_reason,
+        "cooldown_remaining": risk_state.cooldown_remaining,
+        "consecutive_losses": risk_state.consecutive_losses,
+        "peak_equity": risk_state.peak_equity,
+        "drawdown_pct": 100 * (total_equity / risk_state.peak_equity - 1.0) if risk_state.peak_equity > 0 else 0.0,
+        "day_start_equity": risk_state.day_start_equity,
+        "day_pnl_pct": 100 * (total_equity / risk_state.day_start_equity - 1.0) if risk_state.day_start_equity > 0 else 0.0,
+        "week_start_equity": risk_state.week_start_equity,
+        "week_pnl_pct": 100 * (total_equity / risk_state.week_start_equity - 1.0) if risk_state.week_start_equity > 0 else 0.0,
+    }
+
+    validation = []
+    if os.path.exists("walk_forward_summary.csv"):
+        import csv
+        with open("walk_forward_summary.csv") as f:
+            validation = list(csv.DictReader(f))
 
     meta = {
         "exchange": cfg["exchange"],
@@ -96,8 +133,12 @@ def main():
         "total_equity": total_equity,
         "total_return_pct": 100 * (total_equity / cfg["starting_cash"] - 1.0),
         "total_trades": total_trades,
+        "total_realized_pnl": total_realized_pnl,
+        "total_unrealized_pnl": total_unrealized_pnl,
         "active_symbols": active_symbols,
         "symbols": symbol_summaries,
+        "risk": risk_summary,
+        "validation": validation,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     with open(os.path.join(args.out_dir, "meta.json"), "w") as f:
@@ -118,7 +159,7 @@ def main():
 
     points = []
     if frames:
-        merged = pd.concat(frames, axis=1).sort_index().ffill().dropna(how="any")
+        merged = pd.concat(frames, axis=1, sort=False).sort_index().ffill().dropna(how="any")
         eq_cols = [c for c in merged.columns if c.startswith("eq__")]
         px_cols = [c for c in merged.columns if c.startswith("px__")]
         if not merged.empty:

@@ -67,7 +67,7 @@ def main():
         log.info("No equity history yet -- run paper_trade.py (or let the scheduled workflow run) at least once.")
         return
 
-    merged = pd.concat(frames, axis=1).sort_index().ffill().dropna(how="any")
+    merged = pd.concat(frames, axis=1, sort=False).sort_index().ffill().dropna(how="any")
     if merged.empty:
         log.info("Not enough overlapping equity history across symbols yet to plot a combined curve.")
         return
