@@ -1,5 +1,11 @@
 # ML Crypto Trading Bot (paper trading only)
 
+### 📊 [Live dashboard — Sleeve Desk](https://claude.ai/code/artifact/45335d48-eb5d-498f-bb00-e57fbe667d37)
+
+Candlestick charts with trade markers, portfolio equity vs. buy-and-hold, and
+a live trade feed. Updates itself automatically every hour — works from any
+browser, including on your phone. No login or setup needed to view it.
+
 A self-contained pipeline: screen many crypto pairs for liquidity and
 backtested performance → pick the best ones → train a gradient-boosting
 classifier per symbol → backtest with realistic costs → run live against a
