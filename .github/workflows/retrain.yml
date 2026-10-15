@@ -1,13 +1,14 @@
-name: Retrain model (weekly)
+name: Rescan universe + retrain (weekly)
 
 on:
   schedule:
-    # Sundays at 00:15 UTC -- refits the model on the most recent history.
+    # Sundays at 00:15 UTC -- re-screens which symbols look best and refits
+    # their models on the most recent history.
     - cron: "15 0 * * 0"
-  workflow_dispatch: {}   # lets you trigger a retrain manually from the Actions tab
+  workflow_dispatch: {}   # lets you trigger this manually from the Actions tab
 
 permissions:
-  contents: write   # needed to commit the retrained model + refreshed backtest back to the repo
+  contents: write   # needed to commit the updated universe/models/backtest back to the repo
 
 jobs:
   retrain:
@@ -22,19 +23,22 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Backtest on fresh data (also retrains + saves model.joblib)
+      - name: Rescan the universe (picks which symbols to trade)
+        run: python universe.py
+
+      - name: Backtest + retrain models for the selected symbols
         run: python backtest.py
 
-      - name: Commit retrained model + refreshed backtest results
+      - name: Commit updated universe, models, and backtest results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add model.joblib backtest_result.png backtest_result.csv
+          git add symbols.json universe_scan.csv models/ backtest_result.png backtest_result.csv backtest_*.csv
           if git diff --cached --quiet; then
             echo "Nothing changed, skipping commit."
             exit 0
           fi
-          git commit -m "Weekly retrain + backtest refresh [skip ci]"
+          git commit -m "Weekly universe rescan + retrain [skip ci]"
           for attempt in 1 2 3; do
             if git push; then
               break

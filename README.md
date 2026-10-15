@@ -1,10 +1,11 @@
 # ML Crypto Trading Bot (paper trading only)
 
-A self-contained pipeline: fetch public market data → engineer features →
-train a gradient-boosting classifier to predict short-term direction →
-backtest with realistic costs → run live against a **simulated** paper
-broker. No API keys, no real exchange account, and no real money are ever
-involved — `paper_broker.py` is a local bookkeeping simulation only.
+A self-contained pipeline: screen many crypto pairs for liquidity and
+backtested performance → pick the best ones → train a gradient-boosting
+classifier per symbol → backtest with realistic costs → run live against a
+**simulated** paper broker, equal-weighted across the selected symbols. No
+API keys, no real exchange account, and no real money are ever involved —
+`paper_broker.py` is a local bookkeeping simulation only.
 
 ## Setup
 
@@ -17,26 +18,35 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python train.py       # fetch history, engineer features, train + save model.joblib
-python backtest.py    # walk-forward backtest on held-out data, saves backtest_result.png/.csv (also retrains + saves model.joblib)
-python paper_trade.py            # loop: checks for a new closed candle every poll_seconds, trades the simulated account
-python paper_trade.py --once     # single check-and-trade cycle, then exit (good for cron/testing)
-python report.py                 # prints a performance summary + saves paper_report.png (equity curve vs. buy & hold)
+python universe.py    # screen the most liquid USD pairs, backtest each, pick the top N -> symbols.json
+python train.py       # train + save models/<SYMBOL>.joblib for each symbol in symbols.json
+python backtest.py    # walk-forward backtest for each symbol, saves backtest_result.png/.csv (also retrains + saves each model)
+python paper_trade.py            # loop: checks for a new closed candle every poll_seconds, trades every selected symbol
+python paper_trade.py --once     # single check-and-trade cycle (all symbols), then exit (good for cron/testing)
+python report.py                 # prints a portfolio summary + saves paper_report.png (combined equity curve vs. buy & hold)
 ```
 
-State for the paper account lives in `paper_state.json` (cash, position,
-trade log, equity history) — delete it to reset to `starting_cash`.
+Run `universe.py` first -- it creates `symbols.json`, which every other
+script reads to know what to trade. Re-run it any time to re-pick the
+universe (the weekly workflow does this automatically).
+
+State for the paper portfolio lives in `paper_state.json`: one "sleeve" per
+symbol (cash, position, trade log, equity history), each starting with an
+equal share of `starting_cash`. A symbol dropped from the universe on a
+later rescan keeps its sleeve (frozen, no new trades) rather than being
+silently liquidated.
 
 ## Running automatically (GitHub Actions)
 
 Two scheduled workflows in `.github/workflows/` run this for you without any
 server of your own:
 
-- **`paper_trade.yml`** — every hour, runs one paper-trading cycle and
-  regenerates `paper_report.png`, committing both back to the repo.
-- **`retrain.yml`** — weekly, refits the model on the most recent history
-  (via `backtest.py`) and commits the updated `model.joblib` and
-  `backtest_result.png`/`.csv`.
+- **`paper_trade.yml`** — every hour, runs one paper-trading cycle across
+  all selected symbols and regenerates `paper_report.png`, committing both
+  back to the repo.
+- **`retrain.yml`** — weekly, **re-screens the universe** (`universe.py`)
+  and retrains each selected symbol's model (`backtest.py`), committing the
+  updated `symbols.json`, `models/`, and backtest results.
 
 Both also have `workflow_dispatch` enabled, so you can trigger either one
 on demand from the repo's **Actions** tab, or with:
@@ -48,42 +58,59 @@ gh workflow run retrain.yml
 
 ## Seeing results
 
-- **In the repo**: open `paper_report.png` (equity curve, updated hourly)
-  or `backtest_result.png` (walk-forward backtest, updated weekly) in
-  GitHub's file browser — both render inline.
+- **In the repo**: open `paper_report.png` (combined equity curve, updated
+  hourly) or `backtest_result.png` (per-symbol + portfolio backtest,
+  updated weekly) in GitHub's file browser — both render inline. Open
+  `universe_scan.csv` to see every candidate symbol's backtest metrics, not
+  just the ones that got selected.
 - **Locally**: `git pull` to get the latest committed state, then
-  `python report.py` for a text summary (current equity, return %, recent
-  trades) plus a freshly rendered `paper_report.png`.
+  `python report.py` for a text summary (per-symbol and total equity,
+  return %, trade counts) plus a freshly rendered `paper_report.png`.
 
 ## How it works
 
+- **`universe.py`** — lists active USD spot pairs on the exchange, keeps the
+  `scan_pool_size` most liquid by 24h volume (excluding stablecoins/fiat
+  pairs, which have no real volatility to trade), backtests each one, and
+  saves the top `select_top_n` by backtest Sharpe ratio to `symbols.json`.
 - **`data_feed.py`** — pulls OHLCV candles via `ccxt` from a public exchange
   endpoint (default: Kraken, since Binance blocks requests from the US).
   No authentication of any kind.
 - **`features.py`** — returns over multiple windows, rolling volatility, RSI,
   MACD, Bollinger %B, SMA ratios, volume z-score. Label = 1 if price rises
   more than `label_threshold` over the next `label_horizon` candles.
+- **`strategy.py`** — shared per-symbol train/backtest logic used by both
+  `universe.py` (screening) and `backtest.py` (final evaluation + model
+  saved for live trading).
 - **`model.py`** — `HistGradientBoostingClassifier` (scikit-learn, no extra
-  native deps) predicts P(price goes up).
-- **`backtest.py`** — trains on the first `train_fraction` of history only,
-  evaluates on the untouched remainder (no lookahead), applies `fee_rate`
-  and `slippage_bps` on every simulated fill, and plots strategy vs.
-  buy-and-hold equity curves.
-- **`paper_broker.py`** — the "exchange" for paper trading: a JSON file
-  tracking cash/position, filled at the public price plus the same
+  native deps) predicts P(price goes up), one model per symbol.
+- **`backtest.py`** — for each symbol: trains on the first `train_fraction`
+  of history, evaluates on the untouched remainder (no lookahead), applies
+  `fee_rate` and `slippage_bps` on every simulated fill. Also builds an
+  equal-weighted portfolio curve across all selected symbols.
+- **`paper_broker.py`** — the "exchange" for paper trading: a JSON file with
+  one sleeve per symbol, filled at the public price plus the same
   fee/slippage model as the backtest.
 
 ## Tuning
 
-Everything lives in `config.yaml`: symbol, timeframe, label horizon/threshold,
-buy/sell probability thresholds, fee/slippage assumptions, starting cash,
-poll interval.
+Everything lives in `config.yaml`: universe screening (`scan_pool_size`,
+`select_top_n`), timeframe, label horizon/threshold, buy/sell probability
+thresholds, fee/slippage assumptions, total starting cash, poll interval.
 
 ## Honest caveats
 
-- This is a simple baseline (one model, one symbol, long/flat only, hourly
-  bars). Backtest results on a few weeks of data are **not** statistically
-  reliable — treat this as a scaffold to iterate on, not a finished edge.
+- This is a simple baseline (one model per symbol, long/flat only, hourly
+  bars, equal-weight allocation). Backtest results on a few weeks of data
+  are **not** statistically reliable — a couple of selected symbols showed
+  very high backtest Sharpe ratios that are more likely thin-sample noise
+  (one strong recent trend) than a real, repeatable edge. Treat this as a
+  scaffold to iterate on, not a finished edge.
+- Picking symbols by backtest Sharpe ratio alone is itself a known
+  overfitting trap ("selection bias") — with 20+ candidates and a short
+  test window, some will look great by chance. A sturdier version would
+  pick symbols using a separate validation period from the one used to
+  report performance.
 - Kraken's public OHLC endpoint only returns roughly the most recent 720
   candles regardless of `history_limit`. For more history, lower the
   timeframe (e.g. `15m`) or fetch from an exchange with deeper paginated

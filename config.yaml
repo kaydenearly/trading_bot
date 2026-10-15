@@ -1,9 +1,20 @@
 # Trading bot configuration
 
 exchange: kraken         # ccxt exchange id used for PUBLIC market data only (no keys needed)
-symbol: BTC/USD
 timeframe: 1h            # candle size: 1m, 5m, 15m, 1h, 4h, 1d ...
 history_limit: 3000       # number of historical candles to fetch for training/backtest
+
+# Multi-symbol universe: universe.py screens the most liquid USD pairs on
+# `exchange`, backtests each one, and picks the top `select_top_n` by
+# backtest Sharpe ratio. The result is saved to `symbols_file` -- that's
+# what train.py / backtest.py / paper_trade.py / report.py all read.
+universe:
+  quote: USD
+  scan_pool_size: 25      # how many of the most liquid USD pairs to backtest and consider
+  select_top_n: 5          # how many of those to actually trade, equal-weighted
+  min_candles: 200         # skip a candidate with less usable history than this
+symbols_file: symbols.json
+models_dir: models          # one <symbol>.joblib per actively traded symbol
 
 # Feature / label settings
 label_horizon: 4          # predict direction this many bars ahead
@@ -21,10 +32,9 @@ fee_rate: 0.001           # 0.1% per trade, typical spot taker fee
 slippage_bps: 5           # 5 basis points of adverse slippage per fill
 
 # Paper trading
-starting_cash: 10000
+starting_cash: 10000      # total across all active symbols, split equally
 poll_seconds: 60          # how often to check for a new candle in paper_trade.py
 state_file: paper_state.json
-model_file: model.joblib
 
 # TradingView webhook receiver (webhook_server.py)
 # TradingView alerts POST a JSON payload here when they fire. This only ever

@@ -45,6 +45,37 @@ def equity(state: PaperState, price: float) -> float:
     return state.cash + state.position * price
 
 
+# --- multi-symbol portfolio: one PaperState "sleeve" per symbol, stored
+# together in a single JSON file keyed by symbol. Each symbol starts with an
+# equal share of starting_cash the first time it appears. A symbol later
+# dropped from the active universe keeps its sleeve (frozen, no new trades)
+# rather than being silently liquidated.
+
+def load_portfolio(path: str, symbols: list[str], starting_cash: float) -> dict[str, PaperState]:
+    data = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            data = json.load(f)
+
+    per_symbol_cash = starting_cash / len(symbols) if symbols else starting_cash
+    portfolio: dict[str, PaperState] = {}
+    for sym in symbols:
+        portfolio[sym] = PaperState(**data[sym]) if sym in data else PaperState(cash=per_symbol_cash, position=0.0)
+    for sym, sleeve_data in data.items():
+        if sym not in portfolio:
+            portfolio[sym] = PaperState(**sleeve_data)  # inactive symbol, kept but not traded
+    return portfolio
+
+
+def save_portfolio(path: str, portfolio: dict[str, PaperState]) -> None:
+    with open(path, "w") as f:
+        json.dump({sym: asdict(state) for sym, state in portfolio.items()}, f, indent=2, default=str)
+
+
+def portfolio_equity(portfolio: dict[str, PaperState]) -> float:
+    return sum(equity(state, state.last_price) for state in portfolio.values())
+
+
 MAX_EQUITY_LOG_ENTRIES = 5000  # ~7 months of hourly snapshots; keeps the committed JSON bounded
 
 
