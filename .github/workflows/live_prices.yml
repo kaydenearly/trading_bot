@@ -1,0 +1,47 @@
+name: Live price sync (frequent)
+
+on:
+  schedule:
+    # Every 5 minutes -- keeps dashboard_data/ fresh with current prices and
+    # mark-to-market P&L between the hourly trading cycle's own runs. This
+    # workflow never trades and never retrains -- it only regenerates
+    # dashboard_data/ from the state paper_trade.yml already wrote.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  live-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh dashboard data (current prices + mark-to-market P&L)
+        run: python sync_dashboard.py --out-dir dashboard_data
+
+      - name: Commit updated dashboard data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dashboard_data/
+          if git diff --cached --quiet; then
+            echo "Nothing changed, skipping commit."
+            exit 0
+          fi
+          git commit -m "Live price refresh [skip ci]"
+          for attempt in 1 2 3; do
+            if git push; then
+              break
+            fi
+            echo "Push rejected (attempt $attempt), rebasing onto latest main..."
+            git pull --rebase origin main
+          done
