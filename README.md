@@ -24,6 +24,8 @@ python backtest.py    # walk-forward backtest for each symbol, saves backtest_re
 python paper_trade.py            # loop: checks for a new closed candle every poll_seconds, trades every selected symbol
 python paper_trade.py --once     # single check-and-trade cycle (all symbols), then exit (good for cron/testing)
 python report.py                 # prints a portfolio summary + saves paper_report.png (combined equity curve vs. buy & hold)
+python walk_forward.py BTC/USD   # proper multi-fold out-of-sample validation for one or more symbols (see below)
+python walk_forward.py --all     # same, for every symbol currently in symbols.json
 ```
 
 Run `universe.py` first -- it creates `symbols.json`, which every other
@@ -74,8 +76,8 @@ gh workflow run retrain.yml
   pairs, which have no real volatility to trade), backtests each one, and
   saves the top `select_top_n` by backtest Sharpe ratio to `symbols.json`.
 - **`data_feed.py`** — pulls OHLCV candles via `ccxt` from a public exchange
-  endpoint (default: Kraken, since Binance blocks requests from the US).
-  No authentication of any kind.
+  endpoint (default: Bitstamp — see "Honest caveats" for why, instead of
+  Kraken or Binance). No authentication of any kind.
 - **`features.py`** — returns over multiple windows, rolling volatility, RSI,
   MACD, Bollinger %B, SMA ratios, volume z-score. Label = 1 if price rises
   more than `label_threshold` over the next `label_horizon` candles.
@@ -91,6 +93,30 @@ gh workflow run retrain.yml
 - **`paper_broker.py`** — the "exchange" for paper trading: a JSON file with
   one sleeve per symbol, filled at the public price plus the same
   fee/slippage model as the backtest.
+- **`walk_forward.py`** — rolling-origin walk-forward validation: many
+  independent train/test folds across a symbol's full history (expanding
+  training window, non-overlapping test windows), instead of the one split
+  `backtest.py` uses. Reports Sharpe/Sortino/CAGR/drawdown/win
+  rate/profit factor/expectancy/max consecutive losses per fold *and*
+  aggregated (mean, worst-fold, % of folds profitable), plus a chained
+  out-of-sample equity curve. This is the tool to actually trust for a
+  robustness judgment — see "Honest caveats" below for why.
+
+## Walk-forward results so far (be skeptical of backtests)
+
+Running `walk_forward.py` on BTC/USD, ETH/USD, LINK/USD, and SOL/USD over a
+full year of real Bitstamp data (18 independent out-of-sample folds each)
+shows the current ML classifier **does not have a real edge** on any of
+them: mean Sharpe ratios of roughly -3 to -4.5, only 11-28% of folds
+profitable, and the chained out-of-sample equity curve underperforms simple
+buy-and-hold on every symbol tested. This is a very different picture than
+the single 30-day backtest suggested (which showed some symbols with
+Sharpe ratios above 9) — that number was almost certainly noise from a tiny,
+cherry-picked test window, exactly the kind of result walk-forward
+validation exists to catch. The strategy as it currently stands (a
+gradient-boosted classifier on technical-indicator features, long/flat,
+no risk management) should be treated as **not validated** until this
+changes.
 
 ## Tuning
 
@@ -101,20 +127,26 @@ thresholds, fee/slippage assumptions, total starting cash, poll interval.
 ## Honest caveats
 
 - This is a simple baseline (one model per symbol, long/flat only, hourly
-  bars, equal-weight allocation). Backtest results on a few weeks of data
-  are **not** statistically reliable — a couple of selected symbols showed
-  very high backtest Sharpe ratios that are more likely thin-sample noise
-  (one strong recent trend) than a real, repeatable edge. Treat this as a
-  scaffold to iterate on, not a finished edge.
-- Picking symbols by backtest Sharpe ratio alone is itself a known
-  overfitting trap ("selection bias") — with 20+ candidates and a short
-  test window, some will look great by chance. A sturdier version would
-  pick symbols using a separate validation period from the one used to
-  report performance.
-- Kraken's public OHLC endpoint only returns roughly the most recent 720
-  candles regardless of `history_limit`. For more history, lower the
-  timeframe (e.g. `15m`) or fetch from an exchange with deeper paginated
-  history.
+  bars, equal-weight allocation, **no stop-loss or take-profit of any
+  kind**). Walk-forward validation (see above) shows it does not currently
+  have a real edge — treat this as a scaffold to iterate on, not a working
+  strategy.
+- `backtest.py`/`universe.py` still use a single train/test split, which is
+  known to be unreliable (see above) — `walk_forward.py` exists precisely
+  because that single split can make a symbol look good by chance. Universe
+  *selection* hasn't been switched over to walk-forward metrics yet; that's
+  next, along with a correlation check so "more symbols" means real
+  diversification rather than five correlated bets on the same move.
+- We switched from Kraken to Bitstamp because Kraken's public OHLC endpoint
+  silently caps at ~720 candles (~30 days at 1h) no matter what
+  `history_limit` requests — it ignores `since` pagination entirely past
+  that point. Bitstamp honors real pagination (BTC/USD hourly data is
+  available back to 2012) with comparable USD-pair breadth. Binance is not
+  an option at all here since it blocks API requests from the US.
+- No risk management exists yet: no stop-loss, no take-profit, no
+  volatility-adjusted position sizing, no max-drawdown kill switch, no
+  per-trade or per-symbol risk cap. Position sizing is "all-in or flat, an
+  equal dollar share per symbol." This is the next priority.
 - Going from paper trading to **real money** is a separate, deliberate step
   that requires you to generate your own exchange API keys and wire up
   order placement yourself — do that only after you've validated the

@@ -1,8 +1,14 @@
 # Trading bot configuration
 
-exchange: kraken         # ccxt exchange id used for PUBLIC market data only (no keys needed)
+exchange: bitstamp       # ccxt exchange id used for PUBLIC market data only (no keys needed).
+                         # Switched from kraken: kraken's public OHLC endpoint silently
+                         # hard-caps at ~720 candles no matter what's requested. Bitstamp
+                         # honors real pagination -- BTC/USD hourly data is available back
+                         # to 2012 -- with comparable USD-pair breadth (116 active pairs).
 timeframe: 1h            # candle size: 1m, 5m, 15m, 1h, 4h, 1d ...
-history_limit: 3000       # number of historical candles to fetch for training/backtest
+history_limit: 8760       # ~1 year of hourly candles. Raise this for deeper research
+                         # (bitstamp supports it); kept at 1yr by default to keep routine
+                         # fetches/backtests fast.
 
 # Multi-symbol universe: universe.py screens the most liquid USD pairs on
 # `exchange`, backtests each one, and picks the top `select_top_n` by
@@ -20,8 +26,22 @@ models_dir: models          # one <symbol>.joblib per actively traded symbol
 label_horizon: 4          # predict direction this many bars ahead
 label_threshold: 0.0015   # min forward return (as a fraction) to call it "up" vs "down"
 
-# Train/test split for walk-forward backtest (no shuffling — time order preserved)
+# Single train/test split used by backtest.py / train.py / universe.py (time
+# order preserved, no shuffling). This is ONE fold -- see walk_forward.py for
+# proper multi-fold out-of-sample validation, which is what should actually
+# be trusted for a robustness judgment.
 train_fraction: 0.7
+
+# Walk-forward validation (walk_forward.py): many rolling folds instead of a
+# single split, so "robust" means "worked across many historical periods,"
+# not "worked once." Each fold trains on everything before it (expanding
+# window) and tests on the next `test_window_candles`, never touching its
+# own future.
+walk_forward:
+  initial_train_candles: 2160   # ~90 days at 1h: first fold's training window
+  test_window_candles: 360       # ~15 days at 1h: each fold's held-out test window
+  step_candles: 360              # advance by one test window per fold
+  min_folds: 5                   # skip a symbol if fewer folds than this are possible
 
 # Trading signal thresholds (model outputs probability of "up")
 buy_threshold: 0.55       # go long when P(up) exceeds this

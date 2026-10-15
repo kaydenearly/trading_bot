@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 tv_paper_state.json
 webhook_server.log
+walk_forward_*.png
+walk_forward_*.csv
