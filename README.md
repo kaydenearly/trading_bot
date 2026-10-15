@@ -18,13 +18,42 @@ pip install -r requirements.txt
 
 ```bash
 python train.py       # fetch history, engineer features, train + save model.joblib
-python backtest.py    # walk-forward backtest on held-out data, saves backtest_result.png/.csv
+python backtest.py    # walk-forward backtest on held-out data, saves backtest_result.png/.csv (also retrains + saves model.joblib)
 python paper_trade.py            # loop: checks for a new closed candle every poll_seconds, trades the simulated account
 python paper_trade.py --once     # single check-and-trade cycle, then exit (good for cron/testing)
+python report.py                 # prints a performance summary + saves paper_report.png (equity curve vs. buy & hold)
 ```
 
 State for the paper account lives in `paper_state.json` (cash, position,
-trade log) — delete it to reset to `starting_cash`.
+trade log, equity history) — delete it to reset to `starting_cash`.
+
+## Running automatically (GitHub Actions)
+
+Two scheduled workflows in `.github/workflows/` run this for you without any
+server of your own:
+
+- **`paper_trade.yml`** — every hour, runs one paper-trading cycle and
+  regenerates `paper_report.png`, committing both back to the repo.
+- **`retrain.yml`** — weekly, refits the model on the most recent history
+  (via `backtest.py`) and commits the updated `model.joblib` and
+  `backtest_result.png`/`.csv`.
+
+Both also have `workflow_dispatch` enabled, so you can trigger either one
+on demand from the repo's **Actions** tab, or with:
+
+```bash
+gh workflow run paper_trade.yml
+gh workflow run retrain.yml
+```
+
+## Seeing results
+
+- **In the repo**: open `paper_report.png` (equity curve, updated hourly)
+  or `backtest_result.png` (walk-forward backtest, updated weekly) in
+  GitHub's file browser — both render inline.
+- **Locally**: `git pull` to get the latest committed state, then
+  `python report.py` for a text summary (current equity, return %, recent
+  trades) plus a freshly rendered `paper_report.png`.
 
 ## How it works
 

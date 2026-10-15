@@ -45,6 +45,23 @@ def equity(state: PaperState, price: float) -> float:
     return state.cash + state.position * price
 
 
+MAX_EQUITY_LOG_ENTRIES = 5000  # ~7 months of hourly snapshots; keeps the committed JSON bounded
+
+
+def record_equity(state: PaperState, price: float, candle_ts: str) -> None:
+    """Append an equity snapshot so performance can be plotted over time."""
+    state.equity_log.append({
+        "time": datetime.now(timezone.utc).isoformat(),
+        "candle_ts": candle_ts,
+        "price": price,
+        "equity": equity(state, price),
+        "cash": state.cash,
+        "position": state.position,
+    })
+    if len(state.equity_log) > MAX_EQUITY_LOG_ENTRIES:
+        state.equity_log = state.equity_log[-MAX_EQUITY_LOG_ENTRIES:]
+
+
 def execute_target_position(
     state: PaperState,
     desired_fraction_long: float,
@@ -57,7 +74,8 @@ def execute_target_position(
 
     desired_fraction_long=1.0 means fully long, 0.0 means fully cash.
     Applies slippage (adverse price move) and a proportional fee on the
-    traded notional, same as the backtester.
+    traded notional, same as the backtester. Always records an equity
+    snapshot for this candle, whether or not a trade happened.
     """
     current_equity = equity(state, price)
     target_position_value = desired_fraction_long * current_equity
@@ -67,6 +85,7 @@ def execute_target_position(
     if abs(delta_units) * price < 1e-6:
         state.last_price = price
         state.last_candle_ts = candle_ts
+        record_equity(state, price, candle_ts)
         return state
 
     slippage = price * (slippage_bps / 10_000)
@@ -90,4 +109,5 @@ def execute_target_position(
         "cash_after": state.cash,
         "position_after": state.position,
     })
+    record_equity(state, price, candle_ts)
     return state

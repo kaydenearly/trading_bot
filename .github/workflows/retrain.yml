@@ -1,0 +1,34 @@
+name: Retrain model (weekly)
+
+on:
+  schedule:
+    # Sundays at 00:15 UTC -- refits the model on the most recent history.
+    - cron: "15 0 * * 0"
+  workflow_dispatch: {}   # lets you trigger a retrain manually from the Actions tab
+
+permissions:
+  contents: write   # needed to commit the retrained model + refreshed backtest back to the repo
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Backtest on fresh data (also retrains + saves model.joblib)
+        run: python backtest.py
+
+      - name: Commit retrained model + refreshed backtest results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add model.joblib backtest_result.png backtest_result.csv
+          git diff --cached --quiet || git commit -m "Weekly retrain + backtest refresh [skip ci]"
+          git push
