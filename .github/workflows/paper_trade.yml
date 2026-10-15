@@ -1,0 +1,35 @@
+name: Paper trading (scheduled)
+
+on:
+  schedule:
+    # Runs a few minutes past the hour, matching the 1h candle timeframe in config.yaml.
+    # Adjust this if you change `timeframe`.
+    - cron: "5 * * * *"
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write   # needed to commit the updated paper_state.json back to the repo
+
+jobs:
+  paper-trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run one paper-trading cycle
+        run: python paper_trade.py --once
+
+      - name: Commit updated paper trading state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add paper_state.json
+          git diff --cached --quiet || git commit -m "Update paper trading state [skip ci]"
+          git push

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+backtest_result.csv
+backtest_result.png
+tv_paper_state.json
+webhook_server.log
