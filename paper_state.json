@@ -1,9 +1,9 @@
 {
   "SUI/USD": {
-    "cash": 1356.2330076650192,
-    "position": 619.8613969324289,
-    "last_price": 1.03446,
-    "last_candle_ts": "2026-10-15 22:00:00+00:00",
+    "cash": 2004.1866399162068,
+    "position": 0.0,
+    "last_price": 1.04689,
+    "last_candle_ts": "2026-10-16 01:00:00+00:00",
     "trade_log": [
       {
         "time": "2026-10-15T19:56:33.432415+00:00",
@@ -14,6 +14,18 @@
         "fee": 0.6431238684665144,
         "cash_after": 1356.2330076650192,
         "position_after": 619.8613969324289
+      },
+      {
+        "time": "2026-10-16T01:11:26.315057+00:00",
+        "candle_ts": "2026-10-16 01:00:00+00:00",
+        "side": "sell",
+        "units": -619.8613969324289,
+        "fill_price": 1.046366555,
+        "fee": 0.6486022344856732,
+        "return_pct": 0.006503346655008402,
+        "pnl_dollars": 4.186639916206559,
+        "cash_after": 2004.1866399162068,
+        "position_after": 0.0
       }
     ],
     "equity_log": [
@@ -40,19 +52,27 @@
         "equity": 1997.4548283357394,
         "cash": 1356.2330076650192,
         "position": 619.8613969324289
+      },
+      {
+        "time": "2026-10-16T01:11:26.315078+00:00",
+        "candle_ts": "2026-10-16 01:00:00+00:00",
+        "price": 1.04689,
+        "equity": 2004.1866399162068,
+        "cash": 2004.1866399162068,
+        "position": 0.0
       }
     ],
-    "entry_price": 1.0375285049999998,
-    "stop_price": 1.0052632274734818,
-    "target_price": 1.102059060053036,
-    "stop_distance": 0.03226527752651808,
-    "capital_committed": 643.766992334981
+    "entry_price": null,
+    "stop_price": null,
+    "target_price": null,
+    "stop_distance": null,
+    "capital_committed": null
   },
   "PEPE/USD": {
     "cash": 2000.0,
     "position": 0.0,
-    "last_price": 4.13e-06,
-    "last_candle_ts": "2026-10-15 22:00:00+00:00",
+    "last_price": 4.1e-06,
+    "last_candle_ts": "2026-10-16 01:00:00+00:00",
     "trade_log": [],
     "equity_log": [
       {
@@ -78,6 +98,14 @@
         "equity": 2000.0,
         "cash": 2000.0,
         "position": 0.0
+      },
+      {
+        "time": "2026-10-16T01:11:27.027819+00:00",
+        "candle_ts": "2026-10-16 01:00:00+00:00",
+        "price": 4.1e-06,
+        "equity": 2000.0,
+        "cash": 2000.0,
+        "position": 0.0
       }
     ],
     "entry_price": null,
@@ -89,8 +117,8 @@
   "UNI/USD": {
     "cash": 2000.0,
     "position": 0.0,
-    "last_price": 7.49043,
-    "last_candle_ts": "2026-10-15 22:00:00+00:00",
+    "last_price": 7.45789,
+    "last_candle_ts": "2026-10-16 01:00:00+00:00",
     "trade_log": [],
     "equity_log": [
       {
@@ -116,6 +144,14 @@
         "equity": 2000.0,
         "cash": 2000.0,
         "position": 0.0
+      },
+      {
+        "time": "2026-10-16T01:11:27.460080+00:00",
+        "candle_ts": "2026-10-16 01:00:00+00:00",
+        "price": 7.45789,
+        "equity": 2000.0,
+        "cash": 2000.0,
+        "position": 0.0
       }
     ],
     "entry_price": null,
@@ -127,8 +163,8 @@
   "XLM/USD": {
     "cash": 2000.0,
     "position": 0.0,
-    "last_price": 0.183918,
-    "last_candle_ts": "2026-10-15 22:00:00+00:00",
+    "last_price": 0.18314,
+    "last_candle_ts": "2026-10-16 01:00:00+00:00",
     "trade_log": [],
     "equity_log": [
       {
@@ -154,6 +190,14 @@
         "equity": 2000.0,
         "cash": 2000.0,
         "position": 0.0
+      },
+      {
+        "time": "2026-10-16T01:11:27.847889+00:00",
+        "candle_ts": "2026-10-16 01:00:00+00:00",
+        "price": 0.18314,
+        "equity": 2000.0,
+        "cash": 2000.0,
+        "position": 0.0
       }
     ],
     "entry_price": null,
@@ -165,8 +209,8 @@
   "ADA/USD": {
     "cash": 2000.0,
     "position": 0.0,
-    "last_price": 0.2306,
-    "last_candle_ts": "2026-10-15 22:00:00+00:00",
+    "last_price": 0.23037,
+    "last_candle_ts": "2026-10-16 01:00:00+00:00",
     "trade_log": [],
     "equity_log": [
       {
@@ -189,6 +233,14 @@
         "time": "2026-10-15T22:08:42.455752+00:00",
         "candle_ts": "2026-10-15 22:00:00+00:00",
         "price": 0.2306,
+        "equity": 2000.0,
+        "cash": 2000.0,
+        "position": 0.0
+      },
+      {
+        "time": "2026-10-16T01:11:28.440632+00:00",
+        "candle_ts": "2026-10-16 01:00:00+00:00",
+        "price": 0.23037,
         "equity": 2000.0,
         "cash": 2000.0,
         "position": 0.0
