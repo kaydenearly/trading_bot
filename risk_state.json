@@ -4,7 +4,7 @@
   "day_start_date": "2026-11-07",
   "week_start_equity": 19996.04741546056,
   "week_start_date": "2026-11-05T20:36:15.592703+00:00",
-  "consecutive_losses": 0,
+  "consecutive_losses": 1,
   "cooldown_remaining": 0,
   "shutdown": false,
   "shutdown_reason": ""
