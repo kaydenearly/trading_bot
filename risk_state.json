@@ -1,10 +1,10 @@
 {
-  "peak_equity": 26042.957838504535,
+  "peak_equity": 28042.957838504535,
   "day_start_equity": 26042.957838504535,
   "day_start_date": "2026-11-22",
   "week_start_equity": 26042.957838504535,
   "week_start_date": "2026-11-20T02:59:34.337841+00:00",
-  "consecutive_losses": 1,
+  "consecutive_losses": 0,
   "cooldown_remaining": 0,
   "shutdown": false,
   "shutdown_reason": ""
